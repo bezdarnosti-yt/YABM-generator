@@ -1,5 +1,5 @@
 from PIL import Image
-import math, numpy, sys
+import math, numpy
 
 from PyQt6.QtGui import QImage, QPixmap
 

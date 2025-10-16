@@ -149,25 +149,25 @@ def _build_palettes():
 
     global palettes
 
-    with open('palettes.cache', 'w') as pf:
+    with open('../palettes.cache', 'w') as pf:
         json.dump(palettes, pf)
 
     global available_palettes
     available_palettes = palettes.keys()
 
 # check if a palette file exists
-if os.access('palettes.cache', os.R_OK):
+if os.access('../palettes.cache', os.R_OK):
     # check its mtime
     me = os.path.realpath(__file__)
     my_mtime = os.stat(me).st_mtime
-    cache_mtime = os.stat('palettes.cache').st_mtime
+    cache_mtime = os.stat('../palettes.cache').st_mtime
 
     if my_mtime > cache_mtime:
         # rebuild cache
         _build_palettes()
     else:
         # read in the cache
-        with open('palettes.cache', 'r') as pf:
+        with open('../palettes.cache', 'r') as pf:
             palettes = json.load(pf, object_pairs_hook=OrderedDict)
         available_palettes = palettes.keys()
 else:

@@ -52,7 +52,8 @@ class MainWindow(QMainWindow):
         self.palette_method = '1bit_gray'
 
         self.file_name = "test.jpg"
-        self.process_image()
+        if self.file_name and self.file_name != '':
+            self.process_image()
 
     def create_left_panel(self):
         # Creating group for left panel

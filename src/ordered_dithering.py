@@ -49,7 +49,7 @@ def _ordered_dither(image_matrix, palette_name, map_to_use, threshold=0.5):
             adjusted_map_value = map_to_use[x % map_size][y % map_size] + threshold_adjustment * 0.5
             old_pixel += old_pixel * adjusted_map_value
             new_pixel = numpy.array(utils.closest_palette_color(old_pixel,
-                palette_name), dtype=float)
+                                                                palette_name), dtype=float)
             new_matrix[x][y] = new_pixel
     return new_matrix
 
