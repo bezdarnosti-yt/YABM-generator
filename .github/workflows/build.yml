@@ -1,0 +1,138 @@
+name: Build YABM Generator
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [created]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: [3.14]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name "YABM_Generator_${{ matrix.python-version }}" --icon=assets/icon.ico --add-data "*.py;." main.py
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: YABM-Generator-Windows-py${{ matrix.python-version }}
+        path: dist/YABM_Generator_${{ matrix.python-version }}.exe
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: [3.14]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller (onefile)
+      run: |
+        pyinstaller --onefile --windowed --name "YABM_Generator_${{ matrix.python-version }}" --icon=assets/icon.icns --add-data "*.py:." main.py
+
+    - name: Build .app bundle
+      run: |
+        pyinstaller --windowed --name "YABM_Generator_${{ matrix.python-version }}.app" --icon=assets/icon.icns --add-data "*.py:." main.py
+
+    - name: Upload macOS artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: YABM-Generator-macOS-py${{ matrix.python-version }}
+        path: |
+          dist/YABM_Generator_${{ matrix.python-version }}
+          dist/YABM_Generator_${{ matrix.python-version }}.app
+
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.14]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name "YABM_Generator_${{ matrix.python-version }}" --add-data "*.py:." main.py
+
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: YABM-Generator-Linux-py${{ matrix.python-version }}
+        path: dist/YABM_Generator_${{ matrix.python-version }}
+
+  create-release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: List files for debugging
+      run: find artifacts -type f -name "*"
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/**/*.exe
+          artifacts/**/YABM_Generator_*
+          artifacts/**/*.app/**/*
+        body: |
+          Automated builds of YABM Generator
+          
+          **Supported platforms:**
+          - Windows (.exe)
+          - macOS (.app and executable)
+          - Linux (executable)
