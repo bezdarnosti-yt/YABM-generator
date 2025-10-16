@@ -47,7 +47,7 @@ Use `dither.py` to dither an input image with a given palette:
 python dither.py -m floyd_steinberg -p ega images/parrot.jpg
 ```
 
-![parrot](images/parrot.jpg) ![dithered parrot](images/parrot_fs_ega.png)
+![parrot](test.jpg) ![dithered parrot](images/parrot_fs_ega.png)
 
 or use the `-a` flag to create a collage with all combinations of methods and palettes:
 

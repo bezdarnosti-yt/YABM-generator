@@ -172,24 +172,3 @@ if os.access('palettes.cache', os.R_OK):
         available_palettes = palettes.keys()
 else:
     _build_palettes()
-
-if __name__ == '__main__':
-    print(available_palettes)
-
-    from PIL import Image, ImageDraw
-
-    width = max([len(palettes[p]) for p in palettes])*16
-    height = len(available_palettes) * 16
-
-    swatches = Image.new('RGB', (width, height))
-    draw = ImageDraw.Draw(swatches)
-
-    for p_i, pname in enumerate(available_palettes):
-        for c_i, color in enumerate(palettes[pname]):
-            pil_color = tuple([int(255*e) for e in color])
-            draw.rectangle([c_i*16, p_i*16, (c_i+1)*16, (p_i+1)*16],
-                    fill=pil_color, outline=None)
-
-    del draw
-
-    swatches.show()

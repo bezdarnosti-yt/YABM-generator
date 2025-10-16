@@ -1,6 +1,8 @@
 from PIL import Image
 import math, numpy, sys
 
+from PyQt6.QtGui import QImage, QPixmap
+
 import palette
 
 DEBUGMODE = False
@@ -10,7 +12,7 @@ def open_image(image_filename):
 
 
 def pil2numpy(image):
-    matrix = numpy.asarray(image, dtype=numpy.float)
+    matrix = numpy.asarray(image, dtype=float)
     return matrix/255. 
 
 
@@ -49,3 +51,30 @@ def closest_palette_color(value, palette_name, bit_depth=1):
     else:
         return palette.palettes[palette_name][ci_use]
 
+
+def pil_to_pixmap(pil_image):
+    if pil_image.mode == '1':
+        pil_image = pil_image.convert('L')
+
+    if pil_image.mode == 'L':
+        # Grayscale
+        data = pil_image.tobytes('raw', 'L')
+        q_image = QImage(data, pil_image.size[0], pil_image.size[1],
+                         pil_image.size[0], QImage.Format.Format_Grayscale8)
+    elif pil_image.mode == 'RGB':
+        # RGB
+        data = pil_image.tobytes('raw', 'RGB')
+        q_image = QImage(data, pil_image.size[0], pil_image.size[1],
+                         pil_image.size[0] * 3, QImage.Format.Format_RGB888)
+    elif pil_image.mode == 'RGBA':
+        # RGBA
+        data = pil_image.tobytes('raw', 'RGBA')
+        q_image = QImage(data, pil_image.size[0], pil_image.size[1],
+                         pil_image.size[0] * 4, QImage.Format.Format_RGBA8888)
+    else:
+        pil_image = pil_image.convert('RGB')
+        data = pil_image.tobytes('raw', 'RGB')
+        q_image = QImage(data, pil_image.size[0], pil_image.size[1],
+                         pil_image.size[0] * 3, QImage.Format.Format_RGB888)
+
+    return QPixmap.fromImage(q_image)
