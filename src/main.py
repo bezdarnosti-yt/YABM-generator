@@ -6,7 +6,7 @@ from collections import OrderedDict
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QGroupBox,
-                             QFileDialog, QSlider, QComboBox)
+                             QFileDialog, QSlider, QComboBox, QFrame)
 from PyQt6.QtCore import Qt
 import palette
 import utils
@@ -15,6 +15,9 @@ import error_diffusion
 import ordered_dithering
 import randomized
 import threshold
+
+import cv2
+import numpy as np
 
 available_methods = OrderedDict()
 
@@ -34,6 +37,14 @@ class MainWindow(QMainWindow):
         self.dither_method = 'bayer4x4'
         self.palette_method = '1bit_gray'
         self.index = 0
+
+        # Video settings
+        self.video_capture = None
+        self.video_frames = []
+        self.current_frame_index = 0
+        self.total_frames = 0
+        self.is_video_loaded = False
+        self.fps = 0
 
         # Central widget
         central_widget = QWidget()
@@ -162,14 +173,17 @@ class MainWindow(QMainWindow):
 
         buttons_row = QHBoxLayout()
         self.export_one_btn = QPushButton("Export Current Image")
+        self.back_btn = QPushButton("Back")
         self.next_btn = QPushButton("Next")
         self.next_save_btn = QPushButton("Next + Save")
 
         self.export_one_btn.clicked.connect(self.export_one)
+        self.back_btn.clicked.connect(self.back)
         self.next_btn.clicked.connect(self.next)
         self.next_save_btn.clicked.connect(self.next_save)
 
         buttons_row.addWidget(self.export_one_btn)
+        buttons_row.addWidget(self.back_btn)
         buttons_row.addWidget(self.next_btn)
         buttons_row.addWidget(self.next_save_btn)
         layout.addLayout(buttons_row)
@@ -181,7 +195,7 @@ class MainWindow(QMainWindow):
     def load_image(self, test=False):
         if test:
             self.file_path = "test.jpg"
-            self.file_name = self.file_path
+            self.file_name = "test.jpg"  # Просто строка
         else:
             result = QFileDialog.getOpenFileName(
                 self,
@@ -191,35 +205,168 @@ class MainWindow(QMainWindow):
                 options=QFileDialog.Option.DontUseNativeDialog
             )
             self.file_path = result[0]
-            self.file_name = self.file_path.fileName()
-            self.index = 0
+            self.file_name = os.path.basename(self.file_path) if self.file_path else ""
 
         if self.file_path and self.file_path != '':
+            self.index = 0
+            self.is_video_loaded = False
+
+            if hasattr(self, 'video_slider'):
+                self.video_slider.deleteLater()
+            if hasattr(self, 'video_frame_info'):
+                self.video_frame_info.deleteLater()
+
+            self.back_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+            self.next_save_btn.setEnabled(False)
+
             self.process_image()
 
     def load_video(self):
-        pass
+        result = QFileDialog.getOpenFileName(
+            self,
+            "Select Video",
+            "",
+            "Video Files (*.mp4 *.avi *.mov *.mkv *.webm)",
+            options=QFileDialog.Option.DontUseNativeDialog
+        )
+        self.file_path = result[0]
+
+        if self.file_path and self.file_path != '':
+            self.back_btn.setEnabled(True)
+            self.next_btn.setEnabled(True)
+            self.next_save_btn.setEnabled(True)
+            self.load_video_file(self.file_path)
+
+    def load_video_file(self, video_path):
+        try:
+            # Clear state
+            self.video_frames = []
+            self.current_frame_index = 0
+            self.is_video_loaded = True
+
+            # Opening video
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                print("Error: Could not open video")
+                return
+
+            self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.fps = cap.get(cv2.CAP_PROP_FPS)
+
+            print(f"Video loaded: {self.total_frames} frames, {self.fps} FPS")
+
+            cap.release()
+
+            # Setting slider for frames count
+            self.setup_video_controls()
+
+            # Process and showing first frame
+            self.show_video_frame(0)
+
+        except Exception as e:
+            print(f"Error loading video: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def setup_video_controls(self):
+        # Deleting old controls if exist
+        if hasattr(self, 'video_slider') and self.video_slider is not None:
+            try:
+                self.video_slider.deleteLater()
+                self.video_slider = None
+            except RuntimeError:
+                self.video_slider = None
+
+        if hasattr(self, 'video_frame_info') and self.video_frame_info is not None:
+            try:
+                self.video_frame_info.deleteLater()
+                self.video_frame_info = None
+            except RuntimeError:
+                self.video_frame_info = None
+
+        # Creating slider for video frames
+        self.video_slider = QSlider(Qt.Orientation.Horizontal)
+        self.video_slider.setMinimum(0)
+        self.video_slider.setMaximum(self.total_frames - 1)
+        self.video_slider.valueChanged.connect(self.on_video_slider_changed)
+
+        self.video_frame_info = QLabel(f"Frame: 1 / {self.total_frames}")
+
+        # Adding in right panel
+        right_layout = self.image_label.parent().layout()
+        right_layout.addWidget(self.video_slider)
+        right_layout.addWidget(self.video_frame_info)
+
+    def show_video_frame(self, frame_index):
+        try:
+            cap = cv2.VideoCapture(self.file_path)
+            if not cap.isOpened():
+                print("Error: Could not open video")
+                return
+
+            # Setting frame position
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+
+            ret, frame = cap.read()
+            if ret:
+                # Convert BGR to RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Convert to PIL Image
+                pil_image = Image.fromarray(frame_rgb)
+
+                # Apply scaling
+                scale_percent = self.size_slider.value()
+                scale_factor = scale_percent / 100.0
+                new_width = int(pil_image.width * scale_factor)
+                new_height = int(pil_image.height * scale_factor)
+                pil_image = pil_image.resize((new_width, new_height), Image.Resampling.NEAREST)
+
+                # Apply dither
+                image_matrix = utils.pil2numpy(pil_image)
+                threshold_value = self.threshold_slider.value() / 100.0
+                dither_matrix = available_methods[self.dither_method](image_matrix, self.palette_method,
+                                                                      threshold_value)
+                dither_image = utils.numpy2pil(dither_matrix)
+
+                # Convert to QPixmap and show it
+                qt_pixmap = utils.pil_to_pixmap(dither_image)
+                self.current_pixmap = qt_pixmap
+                self.scale_image()
+
+                # Updating frame info
+                if hasattr(self, 'video_frame_info'):
+                    self.video_frame_info.setText(f"Frame: {frame_index + 1} / {self.total_frames}")
+
+            cap.release()
+
+        except Exception as e:
+            print(f"Error showing video frame: {e}")
+            import traceback
+            traceback.print_exc()
 
     def process_image(self):
-        image = utils.open_image(self.file_path)
+        if not hasattr(self, 'file_path') or not self.file_path:
+            return
 
-        scale_percent = self.size_slider.value()
+        if self.is_video_loaded:
+            self.show_video_frame(self.current_frame_index)
+        else:
+            image = utils.open_image(self.file_path)
+            scale_percent = self.size_slider.value()
+            scale_factor = scale_percent / 100.0
+            new_width = int(image.width * scale_factor)
+            new_height = int(image.height * scale_factor)
+            image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
 
-        scale_factor = scale_percent / 100.0
-        new_width = int(image.width * scale_factor)
-        new_height = int(image.height * scale_factor)
-        image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
-
-        image_matrix = utils.pil2numpy(image)
-
-        threshold_value = self.threshold_slider.value() / 100.0
-
-        dither_matrix = available_methods[self.dither_method](image_matrix, self.palette_method, threshold_value)
-
-        dither_image = utils.numpy2pil(dither_matrix)
-        qt_pixmap = utils.pil_to_pixmap(dither_image)
-        self.current_pixmap = qt_pixmap
-        self.scale_image()
+            image_matrix = utils.pil2numpy(image)
+            threshold_value = self.threshold_slider.value() / 100.0
+            dither_matrix = available_methods[self.dither_method](image_matrix, self.palette_method, threshold_value)
+            dither_image = utils.numpy2pil(dither_matrix)
+            qt_pixmap = utils.pil_to_pixmap(dither_image)
+            self.current_pixmap = qt_pixmap
+            self.scale_image()
 
     def scale_image(self):
         if hasattr(self, 'current_pixmap') and self.current_pixmap:
@@ -247,12 +394,21 @@ class MainWindow(QMainWindow):
         self.palette_method = value
         self.process_image()
 
+    def on_video_slider_changed(self, value):
+        self.current_frame_index = value
+        self.show_video_frame(value)
+
     def open_github(self):
         github_url = "https://github.com/bezdarnosti-yt/espRAT"
         webbrowser.open(github_url)
 
     def next(self):
-        pass
+        if self.current_frame_index < self.total_frames:
+            self.on_video_slider_changed(self.current_frame_index + 1)
+
+    def back(self):
+        if self.current_frame_index > 0:
+            self.on_video_slider_changed(self.current_frame_index - 1)
 
     def export_one(self):
         if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
@@ -262,14 +418,32 @@ class MainWindow(QMainWindow):
         results_dir = f"{base_name}_results"
         os.makedirs(results_dir, exist_ok=True)
 
-        filename = f"{results_dir}/result_{self.index:04d}.jpg"
+        if self.is_video_loaded:
+            filename = f"{results_dir}/result_{self.current_frame_index}.jpg"
+        else:
+            filename = f"{results_dir}/result_{self.index:04d}.jpg"
 
         self.current_pixmap.save(filename)
         self.index += 1
 
     def next_save(self):
-        pass
+        if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
+            return
 
+        base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+        results_dir = f"{base_name}_results"
+        os.makedirs(results_dir, exist_ok=True)
+
+        filename = f"{results_dir}/result_{self.current_frame_index}.jpg"
+
+        self.current_pixmap.save(filename)
+
+        self.next()
+
+    def closeEvent(self, event):
+        if self.video_capture:
+            self.video_capture.release()
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication([])
