@@ -6,7 +6,7 @@ from collections import OrderedDict
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QGroupBox,
-                             QFileDialog, QSlider, QComboBox, QFrame)
+                             QFileDialog, QSlider, QComboBox, QFrame, QSizePolicy)
 from PyQt6.QtCore import Qt
 import palette
 import utils
@@ -292,6 +292,9 @@ class MainWindow(QMainWindow):
         self.video_slider.valueChanged.connect(self.on_video_slider_changed)
 
         self.video_frame_info = QLabel(f"Frame: 1 / {self.total_frames}")
+
+        # Fix video slider bug
+        self.video_frame_info.setFixedHeight(20)
 
         # Adding in right panel
         right_layout = self.image_label.parent().layout()
