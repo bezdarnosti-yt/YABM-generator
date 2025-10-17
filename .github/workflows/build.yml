@@ -1,61 +1,64 @@
-name: Build Executables
+# -*- mode: python ; coding: utf-8 -*-
 
-on:
-  push:
-    tags: ['v*']
-  workflow_dispatch:
+import os
 
-jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies
-      run: |
-        pip install opencv-python pillow PyQt6 numpy pyinstaller
-    - name: Build Linux executable
-      run: |
-        pyinstaller build.spec
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ImageDithering-linux
-        path: dist/ImageDithering
+block_cipher = None
 
-  build-windows:
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies
-      run: |
-        pip install opencv-python pillow PyQt6 numpy pyinstaller
-    - name: Build Windows executable
-      run: |
-        pyinstaller build.spec
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ImageDithering-windows
-        path: dist/ImageDithering.exe
+# Получаем абсолютный путь к src
+base_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.join(base_dir, 'src')
 
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    - name: Install dependencies
-      run: |
-        pip install opencv-python pillow PyQt6 numpy pyinstaller
-    - name: Build macOS executable
-      run: |
-        pyinstaller build.spec
-    - uses: actions/upload-artifact@v4
-      with:
-        name: ImageDithering-macos
-        path: dist/ImageDithering
+a = Analysis(
+    ['src/main.py'],
+    pathex=[src_dir],  # Добавляем путь к src
+    binaries=[],
+    datas=[],  # Оставляем пустым, если нет дополнительных файлов
+    hiddenimports=[
+        'error_diffusion',
+        'ordered_dithering', 
+        'palette',
+        'randomized',
+        'threshold',
+        'utils',
+        'cv2',
+        'PIL',
+        'PIL._imaging',
+        'numpy',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets'
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='ImageDithering',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None
+)
