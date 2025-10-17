@@ -16,22 +16,17 @@ jobs:
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Create dist directory
+      run: mkdir -p dist
     - name: Build Linux executable
       run: |
         cd src
-        pyinstaller --onefile --name ImageDithering \
-          --hidden-import=error_diffusion \
-          --hidden-import=ordered_dithering \
-          --hidden-import=palette \
-          --hidden-import=randomized \
-          --hidden-import=threshold \
-          --hidden-import=utils \
-          main.py
-        mv dist/ImageDithering ../dist/
+        pyinstaller --onefile --name ImageDithering main.py
+        cp dist/ImageDithering ../dist/ImageDithering-linux
     - uses: actions/upload-artifact@v4
       with:
         name: ImageDithering-linux
-        path: dist/ImageDithering
+        path: dist/ImageDithering-linux
 
   build-windows:
     runs-on: windows-latest
@@ -43,22 +38,18 @@ jobs:
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Create dist directory
+      run: mkdir dist
     - name: Build Windows executable
+      shell: cmd
       run: |
         cd src
-        pyinstaller --onefile --windowed --name ImageDithering \
-          --hidden-import=error_diffusion \
-          --hidden-import=ordered_dithering \
-          --hidden-import=palette \
-          --hidden-import=randomized \
-          --hidden-import=threshold \
-          --hidden-import=utils \
-          main.py
-        mv dist/ImageDithering.exe ../dist/
+        pyinstaller --onefile --windowed --name ImageDithering main.py
+        copy dist\ImageDithering.exe ..\dist\ImageDithering-windows.exe
     - uses: actions/upload-artifact@v4
       with:
         name: ImageDithering-windows
-        path: dist/ImageDithering.exe
+        path: dist/ImageDithering-windows.exe
 
   build-macos:
     runs-on: macos-latest
@@ -70,20 +61,16 @@ jobs:
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Create dist directory
+      run: mkdir -p dist
     - name: Build macOS executable
       run: |
         cd src
-        pyinstaller --onefile --windowed --name ImageDithering \
-          --osx-bundle-identifier com.dithering.app \
-          --hidden-import=error_diffusion \
-          --hidden-import=ordered_dithering \
-          --hidden-import=palette \
-          --hidden-import=randomized \
-          --hidden-import=threshold \
-          --hidden-import=utils \
-          main.py
-        mv dist/ImageDithering ../dist/
+        # На macOS используем onedir вместо onefile для корректной работы
+        pyinstaller --onedir --windowed --name ImageDithering --osx-bundle-identifier com.dithering.app main.py
+        # Копируем весь .app bundle
+        cp -r dist/ImageDithering.app ../dist/
     - uses: actions/upload-artifact@v4
       with:
         name: ImageDithering-macos
-        path: dist/ImageDithering
+        path: dist/ImageDithering.app
