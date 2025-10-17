@@ -1,13 +1,17 @@
 import os
 import sys
 import webbrowser
+import time
+import threading
+import gc
 from collections import OrderedDict
+from queue import Queue
 
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QPushButton, QLabel, QGroupBox,
-                             QFileDialog, QSlider, QComboBox, QFrame, QSizePolicy)
-from PyQt6.QtCore import Qt
+                             QFileDialog, QSlider, QComboBox, QProgressDialog)
+from PyQt6.QtCore import Qt, QTimer
 import palette
 import utils
 
@@ -17,16 +21,117 @@ import randomized
 import threshold
 
 import cv2
-import numpy as np
 
-available_methods = OrderedDict()
+class VideoLoader:
+    def __init__(self, cache_size=30):
+        self.cache_size = cache_size
+        self.frame_cache = OrderedDict()
+        self.load_queue = Queue()
+        self.loader_thread = None
+        self.stop_loading = False
+        self._lock = threading.Lock()
 
-available_methods.update(threshold.available_methods)
-available_methods.update(randomized.available_methods)
-available_methods.update(ordered_dithering.available_methods)
-available_methods.update(error_diffusion.available_methods)
+    def start_loading(self, video_path):
+        self.stop_loading = True
+        if self.loader_thread and self.loader_thread.is_alive():
+            self.loader_thread.join(timeout=1.0)
 
-# noinspection PyAttributeOutsideInit
+        self.stop_loading = False
+        self.frame_cache.clear()
+        self.loader_thread = threading.Thread(target=self._load_frames, args=(video_path,))
+        self.loader_thread.daemon = True
+        self.loader_thread.start()
+
+    def _load_frames(self, video_path):
+        cap = cv2.VideoCapture(video_path)
+        frame_index = 0
+
+        while not self.stop_loading and cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            with self._lock:
+                if len(self.frame_cache) >= self.cache_size:
+                    # Remove oldest frame
+                    self.frame_cache.popitem(last=False)
+
+                # Convert BGR to RGB and cache
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self.frame_cache[frame_index] = frame_rgb
+
+            frame_index += 1
+
+        cap.release()
+
+    def get_frame(self, frame_index):
+        with self._lock:
+            return self.frame_cache.get(frame_index, None)
+
+    def cleanup(self):
+        self.stop_loading = True
+        with self._lock:
+            self.frame_cache.clear()
+
+class ImageProcessor:
+    def __init__(self):
+        self._cache = {}
+        self._cache_keys = []
+        self._max_cache_size = 20  # Cache limit
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _get_cache_key(image_data, scale_percent, threshold_value, dither_method, palette_method):
+        # Creating key for cache from args
+        if hasattr(image_data, 'tobytes'):
+            # For PIL Image
+            image_hash = hash(image_data.tobytes())
+        else:
+            # etc
+            image_hash = hash(str(image_data))
+
+        return image_hash, scale_percent, threshold_value, dither_method, palette_method
+
+    def process_frame(self, image, scale_percent, threshold_value, dither_method, palette_method):
+        cache_key = self._get_cache_key(image, scale_percent, threshold_value, dither_method, palette_method)
+
+        with self._lock:
+            if cache_key in self._cache:
+                # Updating order of use
+                self._cache_keys.remove(cache_key)
+                self._cache_keys.append(cache_key)
+                return self._cache[cache_key]
+
+        # If not in cache
+        scale_factor = scale_percent / 100.0
+        new_width = int(image.width * scale_factor)
+        new_height = int(image.height * scale_factor)
+        resized_image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
+
+        image_matrix = utils.pil2numpy(resized_image)
+        dither_matrix = available_methods[dither_method](image_matrix, palette_method, threshold_value)
+        dither_image = utils.numpy2pil(dither_matrix)
+        qt_pixmap = utils.pil_to_pixmap(dither_image)
+
+        with self._lock:
+            # Adding to cache
+            self._cache[cache_key] = qt_pixmap
+            self._cache_keys.append(cache_key)
+
+            # Clear old if cache full
+            while len(self._cache) > self._max_cache_size:
+                oldest_key = self._cache_keys.pop(0)
+                del self._cache[oldest_key]
+
+        return qt_pixmap
+
+    def clear_cache(self):
+        with self._lock:
+            self._cache.clear()
+            self._cache_keys.clear()
+
+
+# noinspection PyUnresolvedReferences
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -45,6 +150,22 @@ class MainWindow(QMainWindow):
         self.total_frames = 0
         self.is_video_loaded = False
         self.fps = 0
+
+        # Optimizations
+        self.video_loader = VideoLoader()
+        self.image_processor = ImageProcessor()
+
+        # Timer for delay
+        self._processing_timer = QTimer()
+        self._processing_timer.setSingleShot(True)
+        self._processing_timer.timeout.connect(self._delayed_process_image)
+        self._last_process_time = 0
+
+        # Timer for memory clear
+        # TODO: May be buggy! :)
+        self._cleanup_timer = QTimer()
+        self._cleanup_timer.timeout.connect(self._cleanup_memory)
+        self._cleanup_timer.start(30000)  # Every 30 seconds
 
         # Central widget
         central_widget = QWidget()
@@ -156,7 +277,6 @@ class MainWindow(QMainWindow):
         left_group.setLayout(layout)
         return left_group
 
-
     def create_right_panel(self):
         # Creating group for right panel
         right_group = QGroupBox("Preview")
@@ -191,11 +311,28 @@ class MainWindow(QMainWindow):
         right_group.setLayout(layout)
         return right_group
 
+    def _schedule_processing(self):
+        current_time = time.time()
+        if current_time - self._last_process_time > 0.2:  # Every 200ms
+            self._processing_timer.stop()
+            self.process_image()
+            self._last_process_time = current_time
+        else:
+            self._processing_timer.start(200)  # Waiting 200ms
+
+    def _delayed_process_image(self):
+        self.process_image()
+
+    def _cleanup_memory(self):
+        if hasattr(self, 'image_processor'):
+            self.image_processor.clear_cache()
+        gc.collect()
+
     # Signals
     def load_image(self, test=False):
         if test:
             self.file_path = "test.jpg"
-            self.file_name = "test.jpg"  # Просто строка
+            self.file_name = "test.jpg"
         else:
             result = QFileDialog.getOpenFileName(
                 self,
@@ -210,6 +347,7 @@ class MainWindow(QMainWindow):
         if self.file_path and self.file_path != '':
             self.index = 0
             self.is_video_loaded = False
+            self.video_loader.cleanup()
 
             if hasattr(self, 'video_slider'):
                 self.video_slider.deleteLater()
@@ -240,29 +378,38 @@ class MainWindow(QMainWindow):
 
     def load_video_file(self, video_path):
         try:
-            # Clear state
+            # Showing progressbar
+            progress = QProgressDialog("Loading video...", "Cancel", 0, 100, self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.show()
+
+            # Clearing states
             self.video_frames = []
             self.current_frame_index = 0
             self.is_video_loaded = True
+            self.image_processor.clear_cache()
 
-            # Opening video
+            # Opening video for info
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 print("Error: Could not open video")
+                progress.close()
                 return
 
             self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             self.fps = cap.get(cv2.CAP_PROP_FPS)
+            cap.release()
 
             print(f"Video loaded: {self.total_frames} frames, {self.fps} FPS")
 
-            cap.release()
+            # Starting background loading frames
+            self.video_loader.start_loading(video_path)
 
-            # Setting slider for frames count
             self.setup_video_controls()
 
-            # Process and showing first frame
             self.show_video_frame(0)
+
+            progress.close()
 
         except Exception as e:
             print(f"Error loading video: {e}")
@@ -270,7 +417,6 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
 
     def setup_video_controls(self):
-        # Deleting old controls if exist
         if hasattr(self, 'video_slider') and self.video_slider is not None:
             try:
                 self.video_slider.deleteLater()
@@ -285,64 +431,50 @@ class MainWindow(QMainWindow):
             except RuntimeError:
                 self.video_frame_info = None
 
-        # Creating slider for video frames
         self.video_slider = QSlider(Qt.Orientation.Horizontal)
         self.video_slider.setMinimum(0)
         self.video_slider.setMaximum(self.total_frames - 1)
         self.video_slider.valueChanged.connect(self.on_video_slider_changed)
 
         self.video_frame_info = QLabel(f"Frame: 1 / {self.total_frames}")
-
-        # Fix video slider bug
         self.video_frame_info.setFixedHeight(20)
 
-        # Adding in right panel
         right_layout = self.image_label.parent().layout()
         right_layout.addWidget(self.video_slider)
         right_layout.addWidget(self.video_frame_info)
 
     def show_video_frame(self, frame_index):
         try:
-            cap = cv2.VideoCapture(self.file_path)
-            if not cap.isOpened():
-                print("Error: Could not open video")
-                return
+            # Trying to get frame from cache
+            cached_frame = self.video_loader.get_frame(frame_index)
 
-            # Setting frame position
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            if cached_frame is not None:
+                # Using cached frame
+                pil_image = Image.fromarray(cached_frame)
+            else:
+                # Fallback
+                cap = cv2.VideoCapture(self.file_path)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+                ret, frame = cap.read()
+                cap.release()
 
-            ret, frame = cap.read()
-            if ret:
-                # Convert BGR to RGB
+                if not ret:
+                    return
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-                # Convert to PIL Image
                 pil_image = Image.fromarray(frame_rgb)
 
-                # Apply scaling
-                scale_percent = self.size_slider.value()
-                scale_factor = scale_percent / 100.0
-                new_width = int(pil_image.width * scale_factor)
-                new_height = int(pil_image.height * scale_factor)
-                pil_image = pil_image.resize((new_width, new_height), Image.Resampling.NEAREST)
+            scale_percent = self.size_slider.value()
+            threshold_value = self.threshold_slider.value() / 100.0
 
-                # Apply dither
-                image_matrix = utils.pil2numpy(pil_image)
-                threshold_value = self.threshold_slider.value() / 100.0
-                dither_matrix = available_methods[self.dither_method](image_matrix, self.palette_method,
-                                                                      threshold_value)
-                dither_image = utils.numpy2pil(dither_matrix)
+            self.current_pixmap = self.image_processor.process_frame(
+                pil_image, scale_percent, threshold_value,
+                self.dither_method, self.palette_method
+            )
 
-                # Convert to QPixmap and show it
-                qt_pixmap = utils.pil_to_pixmap(dither_image)
-                self.current_pixmap = qt_pixmap
-                self.scale_image()
+            self.scale_image()
 
-                # Updating frame info
-                if hasattr(self, 'video_frame_info'):
-                    self.video_frame_info.setText(f"Frame: {frame_index + 1} / {self.total_frames}")
-
-            cap.release()
+            if hasattr(self, 'video_frame_info'):
+                self.video_frame_info.setText(f"Frame: {frame_index + 1} / {self.total_frames}")
 
         except Exception as e:
             print(f"Error showing video frame: {e}")
@@ -358,17 +490,12 @@ class MainWindow(QMainWindow):
         else:
             image = utils.open_image(self.file_path)
             scale_percent = self.size_slider.value()
-            scale_factor = scale_percent / 100.0
-            new_width = int(image.width * scale_factor)
-            new_height = int(image.height * scale_factor)
-            image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
-
-            image_matrix = utils.pil2numpy(image)
             threshold_value = self.threshold_slider.value() / 100.0
-            dither_matrix = available_methods[self.dither_method](image_matrix, self.palette_method, threshold_value)
-            dither_image = utils.numpy2pil(dither_matrix)
-            qt_pixmap = utils.pil_to_pixmap(dither_image)
-            self.current_pixmap = qt_pixmap
+
+            self.current_pixmap = self.image_processor.process_frame(
+                image, scale_percent, threshold_value,
+                self.dither_method, self.palette_method
+            )
             self.scale_image()
 
     def scale_image(self):
@@ -383,25 +510,26 @@ class MainWindow(QMainWindow):
 
     def on_size_changed(self, value):
         self.size_value_label.setText(str(value))
-        self.process_image()
+        self._schedule_processing()
 
     def on_threshold_changed(self, value):
         self.threshold_value_label.setText(str(value))
-        self.process_image()
+        self._schedule_processing()
 
     def on_dither_changed(self, method):
         self.dither_method = method
-        self.process_image()
+        self._schedule_processing()
 
     def on_palette_changed(self, value):
         self.palette_method = value
-        self.process_image()
+        self._schedule_processing()
 
     def on_video_slider_changed(self, value):
         self.current_frame_index = value
         self.show_video_frame(value)
 
-    def open_github(self):
+    @staticmethod
+    def open_github():
         github_url = "https://github.com/bezdarnosti-yt/espRAT"
         webbrowser.open(github_url)
 
@@ -444,9 +572,18 @@ class MainWindow(QMainWindow):
         self.next()
 
     def closeEvent(self, event):
+        self.video_loader.cleanup()
+        self.image_processor.clear_cache()
         if self.video_capture:
             self.video_capture.release()
         event.accept()
+
+available_methods = OrderedDict()
+
+available_methods.update(threshold.available_methods)
+available_methods.update(randomized.available_methods)
+available_methods.update(ordered_dithering.available_methods)
+available_methods.update(error_diffusion.available_methods)
 
 if __name__ == "__main__":
     app = QApplication([])

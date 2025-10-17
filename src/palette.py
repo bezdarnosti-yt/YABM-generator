@@ -57,7 +57,7 @@ def _build_grayscale_palettes():
         pname = '{}bit_gray'.format(bit_depth)
         palette = [ [0.0, 0.0, 0.0] ]
         for l in range(levels):
-            val = float(l+1)/(levels)
+            val = float(l+1) / levels
             palette.append([val, val, val])
         palettes[pname] = palette
 
@@ -149,8 +149,8 @@ def _build_palettes():
 
     global palettes
 
-    with open('../palettes.cache', 'w') as pf:
-        json.dump(palettes, pf)
+    with open('../palettes.cache', 'w') as val:
+        json.dump(palettes, val)
 
     global available_palettes
     available_palettes = palettes.keys()
