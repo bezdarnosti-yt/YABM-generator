@@ -1,5 +1,4 @@
-opencv-python~=4.12.0.88
-pillow~=12.0.0
-PyQt6~=6.9.1
-PyQt6_sip~=13.10.2
-numpy~=2.3.4
+opencv-python
+pillow
+PyQt6
+numpy
