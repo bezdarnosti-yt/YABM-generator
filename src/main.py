@@ -530,7 +530,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def open_github():
-        github_url = "https://github.com/bezdarnosti-yt/espRAT"
+        github_url = "https://github.com/bezdarnosti-yt/YABM-generator"
         webbrowser.open(github_url)
 
     def next(self):
