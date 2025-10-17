@@ -51,7 +51,7 @@ def block_randomized(image_matrix, palette_name, threshold_val=0.5):
                     new_matrix[bx + x][by + y] = new_pixel
     return new_matrix
 
-_available_methods = OrderedDict([
+available_methods = OrderedDict([
     ('random', lambda im, pal, threshold=0.5: randomized(im, pal, threshold)),
     ('block_random', lambda im, pal, threshold=0.5: block_randomized(im, pal, threshold)),
 ])

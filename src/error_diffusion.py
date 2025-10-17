@@ -82,6 +82,6 @@ _method_names = [
         'sierra', 'two_row_sierra', 'sierra_lite', 'atkinson'
 ]
 
-_available_methods = OrderedDict(
+available_methods = OrderedDict(
     [(mn, (lambda name: (lambda im, pal, threshold=0.5: _error_diffusion(im, pal, _diffusion_matrices[name], threshold)))(mn)) for mn in _method_names]
 )

@@ -28,6 +28,6 @@ def threshold(image_matrix, palette_name, threshold_val=0.5):
 
     return new_matrix
 
-_available_methods = OrderedDict([
+available_methods = OrderedDict([
     ('threshold', lambda im, pal, threshold_val=0.5: threshold(im, pal, threshold_val)),
 ])

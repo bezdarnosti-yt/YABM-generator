@@ -1,3 +1,4 @@
+import os
 import sys
 import webbrowser
 from collections import OrderedDict
@@ -17,10 +18,10 @@ import threshold
 
 available_methods = OrderedDict()
 
-available_methods.update(threshold._available_methods)
-available_methods.update(randomized._available_methods)
-available_methods.update(ordered_dithering._available_methods)
-available_methods.update(error_diffusion._available_methods)
+available_methods.update(threshold.available_methods)
+available_methods.update(randomized.available_methods)
+available_methods.update(ordered_dithering.available_methods)
+available_methods.update(error_diffusion.available_methods)
 
 # noinspection PyAttributeOutsideInit
 class MainWindow(QMainWindow):
@@ -28,6 +29,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("YABM Generator")
         self.setGeometry(100, 100, 1280, 720)
+
+        # Settings
+        self.dither_method = 'bayer4x4'
+        self.palette_method = '1bit_gray'
+        self.index = 0
 
         # Central widget
         central_widget = QWidget()
@@ -46,14 +52,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 3)
 
-        # Settings
-        self.current_color_mode = "bw"
-        self.dither_method = 'threshold'
-        self.palette_method = '1bit_gray'
-
-        self.file_name = "test.jpg"
-        if self.file_name and self.file_name != '':
-            self.process_image()
+        self.load_image(True)
 
     def create_left_panel(self):
         # Creating group for left panel
@@ -85,10 +84,10 @@ class MainWindow(QMainWindow):
         self.size_slider = QSlider(Qt.Orientation.Horizontal)
         self.size_slider.setMinimum(10)
         self.size_slider.setMaximum(100)
-        self.size_slider.setValue(100)
+        self.size_slider.setValue(50)
         self.size_slider.valueChanged.connect(self.on_size_changed)
 
-        self.size_value_label = QLabel("100")
+        self.size_value_label = QLabel("50")
         self.size_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         size_layout.addWidget(size_label)
@@ -118,6 +117,7 @@ class MainWindow(QMainWindow):
         dither_label = QLabel("Dithering method:")
         self.dither_combo = QComboBox()
         self.dither_combo.addItems(available_methods)
+        self.dither_combo.setCurrentText(self.dither_method)
         self.dither_combo.currentTextChanged.connect(self.on_dither_changed)
 
         dither_layout.addWidget(dither_label)
@@ -129,6 +129,7 @@ class MainWindow(QMainWindow):
         palete_label = QLabel("Palette:")
         self.palette_combo = QComboBox()
         self.palette_combo.addItems(palette.available_palettes)
+        self.palette_combo.setCurrentText(self.palette_method)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
 
         palete_layout.addWidget(palete_label)
@@ -177,30 +178,37 @@ class MainWindow(QMainWindow):
         return right_group
 
     # Signals
-    def load_image(self):
-        result = QFileDialog.getOpenFileName(
-            self,
-            "Select Image",
-            "",
-            "Image Files (*.jpg *.jpeg *.png *.bmp)",
-            options=QFileDialog.Option.DontUseNativeDialog
-        )
-        self.file_name = result[0]
-        if self.file_name and self.file_name != '':
+    def load_image(self, test=False):
+        if test:
+            self.file_path = "test.jpg"
+            self.file_name = self.file_path
+        else:
+            result = QFileDialog.getOpenFileName(
+                self,
+                "Select Image",
+                "",
+                "Image Files (*.jpg *.jpeg *.png *.bmp)",
+                options=QFileDialog.Option.DontUseNativeDialog
+            )
+            self.file_path = result[0]
+            self.file_name = self.file_path.fileName()
+            self.index = 0
+
+        if self.file_path and self.file_path != '':
             self.process_image()
 
     def load_video(self):
         pass
 
     def process_image(self):
-        image = utils.open_image(self.file_name)
+        image = utils.open_image(self.file_path)
 
         scale_percent = self.size_slider.value()
-        if scale_percent != 100:
-            scale_factor = scale_percent / 100.0
-            new_width = int(image.width * scale_factor)
-            new_height = int(image.height * scale_factor)
-            image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
+
+        scale_factor = scale_percent / 100.0
+        new_width = int(image.width * scale_factor)
+        new_height = int(image.height * scale_factor)
+        image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
 
         image_matrix = utils.pil2numpy(image)
 
@@ -247,7 +255,17 @@ class MainWindow(QMainWindow):
         pass
 
     def export_one(self):
-        pass
+        if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
+            return
+
+        base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+        results_dir = f"{base_name}_results"
+        os.makedirs(results_dir, exist_ok=True)
+
+        filename = f"{results_dir}/result_{self.index:04d}.jpg"
+
+        self.current_pixmap.save(filename)
+        self.index += 1
 
     def next_save(self):
         pass

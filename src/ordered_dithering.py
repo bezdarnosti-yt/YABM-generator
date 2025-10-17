@@ -58,6 +58,6 @@ _method_names = [
         'cluster4x4', 'cluster8x8',
 ]
 
-_available_methods = OrderedDict(
+available_methods = OrderedDict(
     [(mn, (lambda name: (lambda im, pal, threshold=0.5: _ordered_dither(im, pal, _diffusion_matrices[name], threshold)))(mn)) for mn in _method_names]
 )
