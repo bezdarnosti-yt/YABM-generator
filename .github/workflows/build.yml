@@ -12,7 +12,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v4
       with:
-        python-version: '3.14'
+        python-version: '3.9'  # Самая стабильная версия
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
@@ -30,7 +30,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v4
       with:
-        python-version: '3.14'
+        python-version: '3.9'  # Самая стабильная версия
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
@@ -48,7 +48,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v4
       with:
-        python-version: '3.14'
+        python-version: '3.9'  # Самая стабильная версия
     - name: Install dependencies
       run: |
         pip install opencv-python pillow PyQt6 numpy pyinstaller
