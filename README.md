@@ -1,54 +1,90 @@
-# dither.py
+# YABM Generator - Yet Another Bitmap Generator
 
-dither.py is a simple library I wrote to implement various dithering
-algorithms as a learning exercise. The following algorithms are currently
-implemented:
+![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green)
+![OpenCV](https://img.shields.io/badge/OpenCV-Image%20Processing-orange)
 
-* **Threshold** - basic per-pixel quantization
-* **Ordered Dithering** - quantization based on matrix templates
-    * Bayer 4x4
-    * Bayer 8x8
-    * Cluster 4x4
-    * Cluster 8x8
-* **Error Diffusion** - adaptive forward quantization
-    * Floyd-Steinberg
-    * JaJuNi
-    * Fan
-    * Stucki
-    * Burkes
-    * Sierra
-    * Sierra-2
-    * Sierra Lite
-    * Atkinson
-* **Randomized** - randomized quantization
-    * Per-pixel random
-    * Block random
+[Forked from ahota. Thank you!](https://github.com/ahota/dither)
 
-Several palettes are also available:
+A modern bitmap image generator with support for multiple dithering algorithms and color palettes. Optimized for high-performance processing of large images and videos.
 
-* Grayscale
-    * 1-bit (black and white) through 7-bit (128 level)
-* Gamma-corrected Commodore 64 (without the color limitation of either HiRes or MultiColor modes)
-* CGA (using the RGBI monitor brown color)
-    * Mode 4, low intensity
-        * Palette 1
-        * Palette 2
-    * Mode 4, high intensity
-        * Palette 1
-        * Palette 2
-    * Mode 5, low intensity
-    * Mode 5, high intensity
-* EGA
-* Websafe (most common 6-bit variant)
+## 🖼️ Screenshots
 
-Use `dither.py` to dither an input image with a given palette:
+![](images/1.png)
+![](images/2.png)
+![](images/3.png)
 
-```
-python dither.py -m floyd_steinberg -p ega images/parrot.jpg
-```
+## 🚀 Features
 
-![parrot](src/test.jpg) ![dithered parrot](images/parrot_fs_ega.png)
+- **Modern GUI** - Intuitive PyQt6-based interface
+- **Multiple Dithering Algorithms** - 4 categories of dithering methods
+- **Video Support** - Process video files frame by frame
+- **Optimized Performance** - Advanced caching and vectorization
+- **Batch Export** - Save multiple processed images
+- **Real-time Preview** - Instant preview with adjustable parameters
 
-or use the `-a` flag to create a collage with all combinations of methods and palettes:
+## 🎨 Supported Dithering Algorithms
 
-![taj mahal collage](images/taj_mahal_collage.png)
+### Threshold Methods
+- **Threshold** - Basic per-pixel quantization
+
+### Ordered Dithering
+- **Bayer 4x4** - Classic Bayer matrix dithering
+- **Bayer 8x8** - Higher precision Bayer dithering
+- **Cluster 4x4** - Cluster-dot dithering
+- **Cluster 8x8** - High-quality cluster dithering
+
+### Error Diffusion
+- **Floyd-Steinberg** - Most popular error diffusion
+- **Atkinson** - Apple Macintosh classic
+- **Burkes** - Floyd-Steinberg optimization
+- **Sierra Lite** - Fast error diffusion
+
+### Randomized
+- **Random** - Per-pixel randomized quantization
+- **Block Random** - Block-based randomized dithering
+
+## 🎯 Available Palettes
+
+- **Grayscale** - 1-bit through 7-bit (2-128 levels)
+- **Commodore 64** - Gamma-corrected C64 colors
+- **CGA** - Color Graphics Adapter palettes
+  - Mode 4, low/high intensity
+  - Mode 5, low/high intensity
+- **EGA** - Enhanced Graphics Adapter
+- **Websafe** - Standard 216 web-safe colors
+
+## 🖥️ Usage
+
+### Basic Controls
+
+- **Load Image/Video** - Import files for processing
+- **Size Slider** - Adjust output image scale (10%-100%)
+- **Threshold Slider** - Control quantization threshold
+- **Dither Method** - Select from available algorithms
+- **Palette** - Choose color palette
+- **Export** - Save processed images
+
+### Processing Workflow
+
+- Load an image or video file
+- Adjust size and threshold parameters
+- Select dithering method and palette
+- Preview results in real-time
+- Export individual frames or batch process
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+
+## 📞 Support
+
+If you encounter any problems or have questions:
+
+1. Check existing GitHub issues
+2. Create a new issue with detailed description
+3. Include system information and error logs
