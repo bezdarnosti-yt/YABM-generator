@@ -1,64 +1,89 @@
-# -*- mode: python ; coding: utf-8 -*-
+name: Build Executables
 
-import os
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
 
-block_cipher = None
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Build Linux executable
+      run: |
+        cd src
+        pyinstaller --onefile --name ImageDithering \
+          --hidden-import=error_diffusion \
+          --hidden-import=ordered_dithering \
+          --hidden-import=palette \
+          --hidden-import=randomized \
+          --hidden-import=threshold \
+          --hidden-import=utils \
+          main.py
+        mv dist/ImageDithering ../dist/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ImageDithering-linux
+        path: dist/ImageDithering
 
-# Получаем абсолютный путь к src
-base_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.join(base_dir, 'src')
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Build Windows executable
+      run: |
+        cd src
+        pyinstaller --onefile --windowed --name ImageDithering \
+          --hidden-import=error_diffusion \
+          --hidden-import=ordered_dithering \
+          --hidden-import=palette \
+          --hidden-import=randomized \
+          --hidden-import=threshold \
+          --hidden-import=utils \
+          main.py
+        mv dist/ImageDithering.exe ../dist/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ImageDithering-windows
+        path: dist/ImageDithering.exe
 
-a = Analysis(
-    ['src/main.py'],
-    pathex=[src_dir],  # Добавляем путь к src
-    binaries=[],
-    datas=[],  # Оставляем пустым, если нет дополнительных файлов
-    hiddenimports=[
-        'error_diffusion',
-        'ordered_dithering', 
-        'palette',
-        'randomized',
-        'threshold',
-        'utils',
-        'cv2',
-        'PIL',
-        'PIL._imaging',
-        'numpy',
-        'PyQt6',
-        'PyQt6.QtCore',
-        'PyQt6.QtGui',
-        'PyQt6.QtWidgets'
-    ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name='ImageDithering',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None
-)
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Build macOS executable
+      run: |
+        cd src
+        pyinstaller --onefile --windowed --name ImageDithering \
+          --osx-bundle-identifier com.dithering.app \
+          --hidden-import=error_diffusion \
+          --hidden-import=ordered_dithering \
+          --hidden-import=palette \
+          --hidden-import=randomized \
+          --hidden-import=threshold \
+          --hidden-import=utils \
+          main.py
+        mv dist/ImageDithering ../dist/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ImageDithering-macos
+        path: dist/ImageDithering
