@@ -3,51 +3,74 @@ name: Build Executables
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:  # Позволяет запускать вручную
+  workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            name: linux
-            ext: ""
-          - os: windows-latest  
-            name: windows
-            ext: ".exe"
-          - os: macos-latest
-            name: macos
-            ext: ""
-
-    runs-on: ${{ matrix.os }}
-    
+  build-linux:
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
+    - uses: actions/setup-python@v4
       with:
-        python-version: '3.14'
-    
+        python-version: '3.10'
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install opencv-python pillow PyQt6 numpy pyinstaller
-        
-    - name: Build executable
+    - name: Create dist directory
+      run: mkdir -p dist
+    - name: Build Linux executable
       run: |
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          pyinstaller --onefile --windowed --name ImageDithering src/main.py
-        elif [ "$RUNNER_OS" == "macOS" ]; then
-          pyinstaller --onefile --windowed --name ImageDithering --osx-bundle-identifier com.dithering.app src/main.py
-        else
-          pyinstaller --onefile --name ImageDithering src/main.py
-        fi
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
+        cd src
+        pyinstaller --onefile --name ImageDithering main.py
+        cp dist/ImageDithering ../dist/ImageDithering-linux
+    - uses: actions/upload-artifact@v4
       with:
-        name: ImageDithering-${{ matrix.name }}
-        path: dist/
-        retention-days: 30
+        name: ImageDithering-linux
+        path: dist/ImageDithering-linux
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Create dist directory
+      run: mkdir dist
+    - name: Build Windows executable
+      shell: cmd
+      run: |
+        cd src
+        pyinstaller --onefile --windowed --name ImageDithering main.py
+        copy dist\ImageDithering.exe ..\dist\ImageDithering-windows.exe
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ImageDithering-windows
+        path: dist/ImageDithering-windows.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install opencv-python pillow PyQt6 numpy pyinstaller
+    - name: Create dist directory
+      run: mkdir -p dist
+    - name: Build macOS executable
+      run: |
+        cd src
+        # На macOS используем onedir вместо onefile для корректной работы
+        pyinstaller --onedir --windowed --name ImageDithering --osx-bundle-identifier com.dithering.app main.py
+        # Копируем весь .app bundle
+        cp -r dist/ImageDithering.app ../dist/
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ImageDithering-macos
+        path: dist/ImageDithering.app
