@@ -184,7 +184,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 3)
 
-        self.load_image(True)
+        # self.load_image(True)
 
     def create_left_panel(self):
         # Creating group for left panel
@@ -293,20 +293,29 @@ class MainWindow(QMainWindow):
 
         buttons_row = QHBoxLayout()
         self.export_one_btn = QPushButton("Export Current Image")
+        self.export_all_btn = QPushButton("Export All Images")
         self.back_btn = QPushButton("Back")
         self.next_btn = QPushButton("Next")
         self.next_save_btn = QPushButton("Next + Save")
 
         self.export_one_btn.clicked.connect(self.export_one)
+        self.export_all_btn.clicked.connect(self.export_all)
         self.back_btn.clicked.connect(self.back)
         self.next_btn.clicked.connect(self.next)
         self.next_save_btn.clicked.connect(self.next_save)
 
         buttons_row.addWidget(self.export_one_btn)
+        buttons_row.addWidget(self.export_all_btn)
         buttons_row.addWidget(self.back_btn)
         buttons_row.addWidget(self.next_btn)
         buttons_row.addWidget(self.next_save_btn)
         layout.addLayout(buttons_row)
+
+        self.export_one_btn.setEnabled(False)
+        self.export_all_btn.setEnabled(False)
+        self.back_btn.setEnabled(False)
+        self.next_btn.setEnabled(False)
+        self.next_save_btn.setEnabled(False)
 
         right_group.setLayout(layout)
         return right_group
@@ -357,6 +366,8 @@ class MainWindow(QMainWindow):
             self.back_btn.setEnabled(False)
             self.next_btn.setEnabled(False)
             self.next_save_btn.setEnabled(False)
+            self.export_all_btn.setEnabled(False)
+            self.export_one_btn.setEnabled(True)
 
             self.process_image()
 
@@ -374,6 +385,8 @@ class MainWindow(QMainWindow):
             self.back_btn.setEnabled(True)
             self.next_btn.setEnabled(True)
             self.next_save_btn.setEnabled(True)
+            self.export_all_btn.setEnabled(True)
+            self.export_one_btn.setEnabled(True)
             self.load_video_file(self.file_path)
 
     def load_video_file(self, video_path):
@@ -556,6 +569,17 @@ class MainWindow(QMainWindow):
 
         self.current_pixmap.save(filename)
         self.index += 1
+
+    def export_all(self):
+        if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
+            return
+
+        self.current_frame_index = 0
+        self.show_video_frame(self.current_frame_index)
+
+        while self.current_frame_index < self.total_frames:
+            self.next_save()
+
 
     def next_save(self):
         if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
