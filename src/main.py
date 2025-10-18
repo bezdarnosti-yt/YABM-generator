@@ -563,9 +563,9 @@ class MainWindow(QMainWindow):
         os.makedirs(results_dir, exist_ok=True)
 
         if self.is_video_loaded:
-            filename = f"{results_dir}/result_{self.current_frame_index}.jpg"
+            filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
         else:
-            filename = f"{results_dir}/result_{self.index:04d}.jpg"
+            filename = f"{results_dir}/result_{self.index+1:04d}.jpg"
 
         self.current_pixmap.save(filename)
         self.index += 1
@@ -589,7 +589,7 @@ class MainWindow(QMainWindow):
         results_dir = f"{base_name}_results"
         os.makedirs(results_dir, exist_ok=True)
 
-        filename = f"{results_dir}/result_{self.current_frame_index}.jpg"
+        filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
 
         self.current_pixmap.save(filename)
 
