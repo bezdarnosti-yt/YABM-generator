@@ -57,10 +57,9 @@ def _error_diffusion(image_matrix, palette_name, diffusion_matrix, threshold=0.5
         for x in range(cols):
             old_pixel = new_matrix[y, x]
 
-            if threshold != 0.5:
-                adjusted_pixel = old_pixel * (threshold * 2)
-            else:
-                adjusted_pixel = old_pixel
+            # Apply threshold as bias
+            adjusted_pixel = old_pixel + (threshold - 0.5) * 0.5
+            adjusted_pixel = np.clip(adjusted_pixel, 0.0, 1.0)
 
             new_pixel = closest_color_fast(adjusted_pixel, palette_array)
 

@@ -43,7 +43,7 @@ def _ordered_dither(image_matrix, palette_name, map_to_use, threshold=0.5):
     map_size = map_to_use.shape[0]
 
     # Creating noise matrix
-    threshold_adjustment = (threshold - 0.5) * 2
+    threshold_adjustment = (threshold - 0.5) * 0.5
 
     # Creating index matrix
     x_indices = np.arange(cols) % map_size
@@ -51,11 +51,11 @@ def _ordered_dither(image_matrix, palette_name, map_to_use, threshold=0.5):
 
     # Getting value of dither map for every pixel
     adjusted_map_values = map_to_use[y_indices[:, np.newaxis], x_indices[np.newaxis, :]]
-    adjusted_map_values = adjusted_map_values + threshold_adjustment * 0.5
+    adjusted_map_values = adjusted_map_values + threshold_adjustment
 
     # Expand for 3 color channels and apply noise
     adjusted_map_values_3d = adjusted_map_values[:, :, np.newaxis]
-    noisy_image = image_matrix + image_matrix * adjusted_map_values_3d
+    noisy_image = image_matrix + adjusted_map_values_3d
 
     # Apply palette for image
     new_matrix = utils.closest_palette_color(noisy_image, palette_name)

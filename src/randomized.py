@@ -8,16 +8,17 @@ def randomized(image_matrix, palette_name, threshold_val=0.5):
     new_matrix = np.copy(image_matrix)
     rows, cols, depth = image_matrix.shape
 
-    threshold_adjustment = (threshold_val - 0.5) * 1
+    # Threshold affects noise strength
+    noise_strength = 1.0 / 6.0 * (0.5 + threshold_val)
 
     for y in range(rows):
         for x in range(cols):
             old_pixel = new_matrix[y, x]
             opr, opg, opb = old_pixel
 
-            opr = utils.clamp(opr + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment)
-            opg = utils.clamp(opg + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment)
-            opb = utils.clamp(opb + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment)
+            opr = utils.clamp(opr + random.gauss(0.0, noise_strength))
+            opg = utils.clamp(opg + random.gauss(0.0, noise_strength))
+            opb = utils.clamp(opb + random.gauss(0.0, noise_strength))
 
             new_pixel = np.array(utils.closest_palette_color([opr, opg, opb], palette_name), dtype=float)
             new_matrix[y, x] = new_pixel
@@ -30,7 +31,8 @@ def block_randomized(image_matrix, palette_name, threshold_val=0.5):
     # Block sizes
     block_width, block_height = max(1, cols // 50), max(1, rows // 50)
 
-    threshold_adjustment = (threshold_val - 0.5) * 1
+    # Threshold affects noise strength
+    noise_strength = 1.0 / 6.0 * (0.5 + threshold_val)
 
     for by in range(0, rows, block_height):
         for bx in range(0, cols, block_width):
@@ -48,9 +50,9 @@ def block_randomized(image_matrix, palette_name, threshold_val=0.5):
             avg_color = np.mean(block, axis=(0, 1))
 
             # Generate one noise for all blocks
-            ar = np.clip(avg_color[0] + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment, 0.0, 1.0)
-            ag = np.clip(avg_color[1] + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment, 0.0, 1.0)
-            ab = np.clip(avg_color[2] + random.gauss(0.0, 1.0 / 6.0) + threshold_adjustment, 0.0, 1.0)
+            ar = np.clip(avg_color[0] + random.gauss(0.0, noise_strength), 0.0, 1.0)
+            ag = np.clip(avg_color[1] + random.gauss(0.0, noise_strength), 0.0, 1.0)
+            ab = np.clip(avg_color[2] + random.gauss(0.0, noise_strength), 0.0, 1.0)
 
             # Getting palette color for block
             block_color = utils.closest_palette_color([ar, ag, ab], palette_name)

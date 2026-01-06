@@ -67,7 +67,7 @@ def closest_palette_color(value, palette_name):
         for ci, color in enumerate(colors):
             pr, pg, pb = color
             vr, vg, vb = value
-            dist = math.sqrt((vr-pr)*(vr-pr)+(vg-pg)*(vg-pg)+(vb-pb)*(vb-pb))
+            dist = (vr-pr)*(vr-pr)+(vg-pg)*(vg-pg)+(vb-pb)*(vb-pb)  # Remove sqrt for speed
 
             if dist < min_dist:
                 ci_use = ci
