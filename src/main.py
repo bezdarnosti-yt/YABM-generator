@@ -1,5 +1,9 @@
 import os
 import sys
+
+# Fix Qt plugin conflict with OpenCV
+os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = ''
+
 import webbrowser
 import time
 import threading
