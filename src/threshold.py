@@ -4,9 +4,6 @@ import numpy as np
 import utils
 
 def threshold(image_matrix, palette_name, threshold_val=0.5):
-    # Normalize threshold
-    threshold_value = threshold_val / 2
-
     # Calculate brightness for all pixels
     if image_matrix.shape[2] == 3:  # RGB
         brightness = (0.299 * image_matrix[:, :, 0] +
@@ -16,7 +13,7 @@ def threshold(image_matrix, palette_name, threshold_val=0.5):
         brightness = np.mean(image_matrix, axis=2)
 
     # Creating binary image
-    binary_mask = brightness > threshold_value
+    binary_mask = brightness > threshold_val
 
     # Creating bw image
     white_black_image = np.zeros_like(image_matrix)
