@@ -506,15 +506,18 @@ class MainWindow(QMainWindow):
         if self.is_video_loaded:
             self.show_video_frame(self.current_frame_index)
         else:
-            image = utils.open_image(self.file_path)
-            scale_percent = self.size_slider.value()
-            threshold_value = self.threshold_slider.value() / 100.0
+            try:
+                image = utils.open_image(self.file_path)
+                scale_percent = self.size_slider.value()
+                threshold_value = self.threshold_slider.value() / 100.0
 
-            self.current_pixmap = self.image_processor.process_frame(
-                image, scale_percent, threshold_value,
-                self.dither_method, self.palette_method
-            )
-            self.scale_image()
+                self.current_pixmap = self.image_processor.process_frame(
+                    image, scale_percent, threshold_value,
+                    self.dither_method, self.palette_method
+                )
+                self.scale_image()
+            except Exception as e:
+                print(f"Error loading image: {e}")
 
     def scale_image(self):
         if hasattr(self, 'current_pixmap') and self.current_pixmap:
@@ -552,7 +555,7 @@ class MainWindow(QMainWindow):
         webbrowser.open(github_url)
 
     def next(self):
-        if self.current_frame_index < self.total_frames:
+        if self.current_frame_index < self.total_frames - 1:
             self.on_video_slider_changed(self.current_frame_index + 1)
 
     def back(self):
@@ -579,11 +582,15 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
             return
 
-        self.current_frame_index = 0
-        self.show_video_frame(self.current_frame_index)
-
-        while self.current_frame_index < self.total_frames:
-            self.next_save()
+        for frame_idx in range(self.total_frames):
+            self.current_frame_index = frame_idx
+            self.show_video_frame(frame_idx)
+            
+            base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+            results_dir = f"{base_name}_results"
+            os.makedirs(results_dir, exist_ok=True)
+            filename = f"{results_dir}/result_{frame_idx+1}.jpg"
+            self.current_pixmap.save(filename)
 
 
     def next_save(self):

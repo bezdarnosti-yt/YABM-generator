@@ -1,5 +1,5 @@
 from collections import OrderedDict
-import json,os
+import json, os
 
 palettes = OrderedDict()
 available_palettes = []
@@ -148,26 +148,28 @@ def _build_palettes():
     _build_c64_palettes()
 
     global palettes
-
-    with open('../palettes.cache', 'w') as val:
+    
+    cache_path = os.path.join(os.path.dirname(__file__), '..', 'palettes.cache')
+    with open(cache_path, 'w') as val:
         json.dump(palettes, val)
 
     global available_palettes
     available_palettes = palettes.keys()
 
 # check if a palette file exists
-if os.access('../palettes.cache', os.R_OK):
+cache_path = os.path.join(os.path.dirname(__file__), '..', 'palettes.cache')
+if os.access(cache_path, os.R_OK):
     # check its mtime
     me = os.path.realpath(__file__)
     my_mtime = os.stat(me).st_mtime
-    cache_mtime = os.stat('../palettes.cache').st_mtime
+    cache_mtime = os.stat(cache_path).st_mtime
 
     if my_mtime > cache_mtime:
         # rebuild cache
         _build_palettes()
     else:
         # read in the cache
-        with open('../palettes.cache', 'r') as pf:
+        with open(cache_path, 'r') as pf:
             palettes = json.load(pf, object_pairs_hook=OrderedDict)
         available_palettes = palettes.keys()
 else:
