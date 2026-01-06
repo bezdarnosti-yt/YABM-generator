@@ -9,8 +9,11 @@ import webbrowser
 import time
 import threading
 import gc
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from queue import Queue
+
+# Cache key structure for better readability
+CacheKey = namedtuple('CacheKey', ['image_hash', 'scale_percent', 'threshold_value', 'dither_method', 'palette_method'])
 
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -39,35 +42,52 @@ class VideoLoader:
     def start_loading(self, video_path):
         self.stop_loading = True
         if self.loader_thread and self.loader_thread.is_alive():
-            self.loader_thread.join(timeout=1.0)
+            try:
+                self.loader_thread.join(timeout=1.0)
+            except Exception as e:
+                print(f"Error stopping loader thread: {e}")
 
         self.stop_loading = False
         self.frame_cache.clear()
-        self.loader_thread = threading.Thread(target=self._load_frames, args=(video_path,))
-        self.loader_thread.daemon = True
-        self.loader_thread.start()
+        try:
+            self.loader_thread = threading.Thread(target=self._load_frames, args=(video_path,))
+            self.loader_thread.daemon = True
+            self.loader_thread.start()
+        except Exception as e:
+            print(f"Error starting loader thread: {e}")
+            self.stop_loading = True
 
     def _load_frames(self, video_path):
-        cap = cv2.VideoCapture(video_path)
-        frame_index = 0
+        cap = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                print(f"Error: Could not open video file: {video_path}")
+                return
+                
+            frame_index = 0
+            while not self.stop_loading and cap.isOpened():
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
 
-        while not self.stop_loading and cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
+                    with self._lock:
+                        if len(self.frame_cache) >= self.cache_size:
+                            self.frame_cache.popitem(last=False)
 
-            with self._lock:
-                if len(self.frame_cache) >= self.cache_size:
-                    # Remove oldest frame
-                    self.frame_cache.popitem(last=False)
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        self.frame_cache[frame_index] = frame_rgb
 
-                # Convert BGR to RGB and cache
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self.frame_cache[frame_index] = frame_rgb
-
-            frame_index += 1
-
-        cap.release()
+                    frame_index += 1
+                except Exception as e:
+                    print(f"Error processing frame {frame_index}: {e}")
+                    break
+        except Exception as e:
+            print(f"Error in video loading: {e}")
+        finally:
+            if cap:
+                cap.release()
 
     def get_frame(self, frame_index):
         with self._lock:
@@ -95,40 +115,44 @@ class ImageProcessor:
             # etc
             image_hash = hashlib.sha256(str(image_data).encode()).hexdigest()[:16]
 
-        return image_hash, scale_percent, threshold_value, dither_method, palette_method
+        return CacheKey(image_hash, scale_percent, threshold_value, dither_method, palette_method)
 
     def process_frame(self, image, scale_percent, threshold_value, dither_method, palette_method):
-        cache_key = self._get_cache_key(image, scale_percent, threshold_value, dither_method, palette_method)
+        try:
+            cache_key = self._get_cache_key(image, scale_percent, threshold_value, dither_method, palette_method)
 
-        with self._lock:
-            if cache_key in self._cache:
-                # Updating order of use
-                self._cache_keys.remove(cache_key)
+            with self._lock:
+                if cache_key in self._cache:
+                    # Updating order of use
+                    self._cache_keys.remove(cache_key)
+                    self._cache_keys.append(cache_key)
+                    return self._cache[cache_key]
+
+            # If not in cache
+            scale_factor = scale_percent / 100.0
+            new_width = int(image.width * scale_factor)
+            new_height = int(image.height * scale_factor)
+            resized_image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
+
+            image_matrix = utils.pil2numpy(resized_image)
+            dither_matrix = available_methods[dither_method](image_matrix, palette_method, threshold_value)
+            dither_image = utils.numpy2pil(dither_matrix)
+            qt_pixmap = utils.pil_to_pixmap(dither_image)
+
+            with self._lock:
+                # Adding to cache
+                self._cache[cache_key] = qt_pixmap
                 self._cache_keys.append(cache_key)
-                return self._cache[cache_key]
 
-        # If not in cache
-        scale_factor = scale_percent / 100.0
-        new_width = int(image.width * scale_factor)
-        new_height = int(image.height * scale_factor)
-        resized_image = image.resize((new_width, new_height), Image.Resampling.NEAREST)
+                # Clear old if cache full
+                while len(self._cache) > self._max_cache_size:
+                    oldest_key = self._cache_keys.pop(0)
+                    del self._cache[oldest_key]
 
-        image_matrix = utils.pil2numpy(resized_image)
-        dither_matrix = available_methods[dither_method](image_matrix, palette_method, threshold_value)
-        dither_image = utils.numpy2pil(dither_matrix)
-        qt_pixmap = utils.pil_to_pixmap(dither_image)
-
-        with self._lock:
-            # Adding to cache
-            self._cache[cache_key] = qt_pixmap
-            self._cache_keys.append(cache_key)
-
-            # Clear old if cache full
-            while len(self._cache) > self._max_cache_size:
-                oldest_key = self._cache_keys.pop(0)
-                del self._cache[oldest_key]
-
-        return qt_pixmap
+            return qt_pixmap
+        except Exception as e:
+            print(f"Error processing frame: {e}")
+            return None
 
     def clear_cache(self):
         with self._lock:
@@ -140,9 +164,19 @@ class ImageProcessor:
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self._setup_window()
+        self._initialize_settings()
+        self._setup_components()
+        self._setup_timers()
+        self._setup_ui()
+    
+    def _setup_window(self):
+        """Configure main window properties."""
         self.setWindowTitle("YABM Generator")
         self.setGeometry(100, 100, 1280, 720)
-
+    
+    def _initialize_settings(self):
+        """Initialize application settings and state variables."""
         # Settings
         self.dither_method = 'bayer4x4'
         self.palette_method = '1bit_gray'
@@ -155,11 +189,14 @@ class MainWindow(QMainWindow):
         self.total_frames = 0
         self.is_video_loaded = False
         self.fps = 0
-
-        # Optimizations
+    
+    def _setup_components(self):
+        """Initialize core components."""
         self.video_loader = VideoLoader()
         self.image_processor = ImageProcessor()
-
+    
+    def _setup_timers(self):
+        """Configure application timers."""
         # Timer for delay
         self._processing_timer = QTimer()
         self._processing_timer.setSingleShot(True)
@@ -167,29 +204,21 @@ class MainWindow(QMainWindow):
         self._last_process_time = 0
 
         # Timer for memory clear
-        # TODO: May be buggy! :)
         self._cleanup_timer = QTimer()
         self._cleanup_timer.timeout.connect(self._cleanup_memory)
         self._cleanup_timer.start(30000)  # Every 30 seconds
-
-        # Central widget
+    
+    def _setup_ui(self):
+        """Setup the user interface layout."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Main horizontal layout
         main_layout = QHBoxLayout(central_widget)
-
-        # Left panel with buttons etc
         left_panel = self.create_left_panel()
-
-        # Right panel with image/video
         right_panel = self.create_right_panel()
 
-        # Adding panels in main layout
         main_layout.addWidget(left_panel, 1)
         main_layout.addWidget(right_panel, 3)
-
-        # self.load_image(True)
 
     def create_left_panel(self):
         # Creating group for left panel
@@ -262,16 +291,16 @@ class MainWindow(QMainWindow):
         layout.addLayout(dither_layout)
 
         # 5 row
-        palete_layout = QVBoxLayout()
-        palete_label = QLabel("Palette:")
+        palette_layout = QVBoxLayout()
+        palette_label = QLabel("Palette:")
         self.palette_combo = QComboBox()
         self.palette_combo.addItems(palette.available_palettes)
         self.palette_combo.setCurrentText(self.palette_method)
         self.palette_combo.currentTextChanged.connect(self.on_palette_changed)
 
-        palete_layout.addWidget(palete_label)
-        palete_layout.addWidget(self.palette_combo)
-        layout.addLayout(palete_layout)
+        palette_layout.addWidget(palette_label)
+        palette_layout.addWidget(self.palette_combo)
+        layout.addLayout(palette_layout)
 
         # 6 row
         self.github_btn = QPushButton("GitHub Repository")
@@ -344,6 +373,15 @@ class MainWindow(QMainWindow):
 
     # Signals
     def load_image(self, test=False):
+        """Load an image file and prepare for processing."""
+        self._get_image_file_path(test)
+        
+        if self.file_path and self.file_path != '':
+            self._prepare_for_image_mode()
+            self.process_image()
+    
+    def _get_image_file_path(self, test=False):
+        """Get the image file path from user or test mode."""
         if test:
             self.file_path = "test.jpg"
             self.file_name = "test.jpg"
@@ -357,26 +395,41 @@ class MainWindow(QMainWindow):
             )
             self.file_path = result[0]
             self.file_name = os.path.basename(self.file_path) if self.file_path else ""
-
-        if self.file_path and self.file_path != '':
-            self.index = 0
-            self.is_video_loaded = False
-            self.video_loader.cleanup()
-
-            if hasattr(self, 'video_slider'):
-                self.video_slider.deleteLater()
-            if hasattr(self, 'video_frame_info'):
-                self.video_frame_info.deleteLater()
-
-            self.back_btn.setEnabled(False)
-            self.next_btn.setEnabled(False)
-            self.next_save_btn.setEnabled(False)
-            self.export_all_btn.setEnabled(False)
-            self.export_one_btn.setEnabled(True)
-
-            self.process_image()
+    
+    def _prepare_for_image_mode(self):
+        """Prepare the application for image processing mode."""
+        self.index = 0
+        self.is_video_loaded = False
+        self.video_loader.cleanup()
+        
+        self._cleanup_video_controls()
+        self._set_image_mode_buttons()
+    
+    def _cleanup_video_controls(self):
+        """Remove video-specific UI controls."""
+        if hasattr(self, 'video_slider'):
+            self.video_slider.deleteLater()
+        if hasattr(self, 'video_frame_info'):
+            self.video_frame_info.deleteLater()
+    
+    def _set_image_mode_buttons(self):
+        """Configure button states for image mode."""
+        self.back_btn.setEnabled(False)
+        self.next_btn.setEnabled(False)
+        self.next_save_btn.setEnabled(False)
+        self.export_all_btn.setEnabled(False)
+        self.export_one_btn.setEnabled(True)
 
     def load_video(self):
+        """Load a video file and prepare for processing."""
+        self._get_video_file_path()
+        
+        if self.file_path and self.file_path != '':
+            self._prepare_for_video_mode()
+            self.load_video_file(self.file_path)
+    
+    def _get_video_file_path(self):
+        """Get the video file path from user selection."""
         result = QFileDialog.getOpenFileName(
             self,
             "Select Video",
@@ -385,16 +438,17 @@ class MainWindow(QMainWindow):
             options=QFileDialog.Option.DontUseNativeDialog
         )
         self.file_path = result[0]
-
-        if self.file_path and self.file_path != '':
-            self.back_btn.setEnabled(True)
-            self.next_btn.setEnabled(True)
-            self.next_save_btn.setEnabled(True)
-            self.export_all_btn.setEnabled(True)
-            self.export_one_btn.setEnabled(True)
-            self.load_video_file(self.file_path)
+    
+    def _prepare_for_video_mode(self):
+        """Configure UI for video processing mode."""
+        self.back_btn.setEnabled(True)
+        self.next_btn.setEnabled(True)
+        self.next_save_btn.setEnabled(True)
+        self.export_all_btn.setEnabled(True)
+        self.export_one_btn.setEnabled(True)
 
     def load_video_file(self, video_path):
+        progress = None
         try:
             # Showing progressbar
             progress = QProgressDialog("Loading video...", "Cancel", 0, 100, self)
@@ -411,7 +465,6 @@ class MainWindow(QMainWindow):
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 print("Error: Could not open video")
-                progress.close()
                 return
 
             self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -427,77 +480,108 @@ class MainWindow(QMainWindow):
 
             self.show_video_frame(0)
 
-            progress.close()
-
         except Exception as e:
             print(f"Error loading video: {e}")
             import traceback
             traceback.print_exc()
+        finally:
+            if progress:
+                progress.close()
 
     def setup_video_controls(self):
-        if hasattr(self, 'video_slider') and self.video_slider is not None:
-            try:
-                self.video_slider.deleteLater()
-                self.video_slider = None
-            except RuntimeError:
-                self.video_slider = None
+        try:
+            if hasattr(self, 'video_slider') and self.video_slider is not None:
+                try:
+                    self.video_slider.deleteLater()
+                    self.video_slider = None
+                except RuntimeError:
+                    self.video_slider = None
 
-        if hasattr(self, 'video_frame_info') and self.video_frame_info is not None:
-            try:
-                self.video_frame_info.deleteLater()
-                self.video_frame_info = None
-            except RuntimeError:
-                self.video_frame_info = None
+            if hasattr(self, 'video_frame_info') and self.video_frame_info is not None:
+                try:
+                    self.video_frame_info.deleteLater()
+                    self.video_frame_info = None
+                except RuntimeError:
+                    self.video_frame_info = None
 
-        self.video_slider = QSlider(Qt.Orientation.Horizontal)
-        self.video_slider.setMinimum(0)
-        self.video_slider.setMaximum(self.total_frames - 1)
-        self.video_slider.valueChanged.connect(self.on_video_slider_changed)
+            self.video_slider = QSlider(Qt.Orientation.Horizontal)
+            self.video_slider.setMinimum(0)
+            self.video_slider.setMaximum(self.total_frames - 1)
+            self.video_slider.valueChanged.connect(self.on_video_slider_changed)
 
-        self.video_frame_info = QLabel(f"Frame: 1 / {self.total_frames}")
-        self.video_frame_info.setFixedHeight(20)
+            self.video_frame_info = QLabel(f"Frame: 1 / {self.total_frames}")
+            self.video_frame_info.setFixedHeight(20)
 
-        right_layout = self.image_label.parent().layout()
-        right_layout.addWidget(self.video_slider)
-        right_layout.addWidget(self.video_frame_info)
+            right_layout = self.image_label.parent().layout()
+            right_layout.addWidget(self.video_slider)
+            right_layout.addWidget(self.video_frame_info)
+        except Exception as e:
+            print(f"Error setting up video controls: {e}")
 
     def show_video_frame(self, frame_index):
+        """Display a specific video frame with current processing settings."""
         try:
-            # Trying to get frame from cache
-            cached_frame = self.video_loader.get_frame(frame_index)
-
-            if cached_frame is not None:
-                # Using cached frame
-                pil_image = Image.fromarray(cached_frame)
-            else:
-                # Fallback
-                cap = cv2.VideoCapture(self.file_path)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-                ret, frame = cap.read()
-                cap.release()
-
-                if not ret:
-                    return
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                pil_image = Image.fromarray(frame_rgb)
-
-            scale_percent = self.size_slider.value()
-            threshold_value = self.threshold_slider.value() / 100.0
-
-            self.current_pixmap = self.image_processor.process_frame(
-                pil_image, scale_percent, threshold_value,
-                self.dither_method, self.palette_method
-            )
-
-            self.scale_image()
-
-            if hasattr(self, 'video_frame_info'):
-                self.video_frame_info.setText(f"Frame: {frame_index + 1} / {self.total_frames}")
-
+            pil_image = self._get_video_frame_image(frame_index)
+            if pil_image is None:
+                return
+                
+            self._process_and_display_frame(pil_image)
+            self._update_frame_info(frame_index)
+            
         except Exception as e:
             print(f"Error showing video frame: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _get_video_frame_image(self, frame_index):
+        """Get PIL image for the specified frame index."""
+        cached_frame = self.video_loader.get_frame(frame_index)
+        
+        if cached_frame is not None:
+            return Image.fromarray(cached_frame)
+        
+        return self._load_frame_from_video(frame_index)
+    
+    def _load_frame_from_video(self, frame_index):
+        """Load frame directly from video file as fallback."""
+        cap = None
+        try:
+            cap = cv2.VideoCapture(self.file_path)
+            if not cap.isOpened():
+                print(f"Error: Could not open video file: {self.file_path}")
+                return None
+                
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            ret, frame = cap.read()
+            
+            if not ret:
+                return None
+                
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            return Image.fromarray(frame_rgb)
+        except Exception as e:
+            print(f"Error loading frame {frame_index}: {e}")
+            return None
+        finally:
+            if cap:
+                cap.release()
+    
+    def _process_and_display_frame(self, pil_image):
+        """Process image with current settings and display it."""
+        scale_percent = self.size_slider.value()
+        threshold_value = self.threshold_slider.value() / 100.0
+        
+        self.current_pixmap = self.image_processor.process_frame(
+            pil_image, scale_percent, threshold_value,
+            self.dither_method, self.palette_method
+        )
+        
+        self.scale_image()
+    
+    def _update_frame_info(self, frame_index):
+        """Update the frame information display."""
+        if hasattr(self, 'video_frame_info'):
+            self.video_frame_info.setText(f"Frame: {frame_index + 1} / {self.total_frames}")
 
     def process_image(self):
         if not hasattr(self, 'file_path') or not self.file_path:
@@ -566,53 +650,76 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
             return
 
-        base_name = os.path.splitext(os.path.basename(self.file_path))[0]
-        results_dir = f"{base_name}_results"
-        os.makedirs(results_dir, exist_ok=True)
-
-        if self.is_video_loaded:
-            filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
-        else:
-            filename = f"{results_dir}/result_{self.index+1:04d}.jpg"
-
-        self.current_pixmap.save(filename)
-        self.index += 1
-
-    def export_all(self):
-        if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
-            return
-
-        for frame_idx in range(self.total_frames):
-            self.current_frame_index = frame_idx
-            self.show_video_frame(frame_idx)
-            
+        try:
             base_name = os.path.splitext(os.path.basename(self.file_path))[0]
             results_dir = f"{base_name}_results"
             os.makedirs(results_dir, exist_ok=True)
-            filename = f"{results_dir}/result_{frame_idx+1}.jpg"
+
+            if self.is_video_loaded:
+                filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
+            else:
+                filename = f"{results_dir}/result_{self.index+1:04d}.jpg"
+
             self.current_pixmap.save(filename)
+            self.index += 1
+        except Exception as e:
+            print(f"Error exporting image: {e}")
 
-
-    def next_save(self):
+    def export_all(self):
+        """Export all video frames as individual images."""
         if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
             return
 
         base_name = os.path.splitext(os.path.basename(self.file_path))[0]
         results_dir = f"{base_name}_results"
         os.makedirs(results_dir, exist_ok=True)
+        
+        for frame_idx in range(self.total_frames):
+            self._export_single_frame(frame_idx, results_dir)
+    
+    def _export_single_frame(self, frame_idx, results_dir):
+        """Export a single frame to the specified directory."""
+        try:
+            self.current_frame_index = frame_idx
+            self.show_video_frame(frame_idx)
+            
+            filename = f"{results_dir}/result_{frame_idx+1}.jpg"
+            self.current_pixmap.save(filename)
+        except Exception as e:
+            print(f"Error exporting frame {frame_idx}: {e}")
 
-        filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
 
-        self.current_pixmap.save(filename)
+    def next_save(self):
+        """Save current frame and move to next frame."""
+        if not hasattr(self, 'current_pixmap') or self.current_pixmap.isNull():
+            return
 
+        self._save_current_frame()
         self.next()
+    
+    def _save_current_frame(self):
+        """Save the current frame to file."""
+        try:
+            base_name = os.path.splitext(os.path.basename(self.file_path))[0]
+            results_dir = f"{base_name}_results"
+            os.makedirs(results_dir, exist_ok=True)
+            
+            filename = f"{results_dir}/result_{self.current_frame_index+1}.jpg"
+            self.current_pixmap.save(filename)
+        except Exception as e:
+            print(f"Error saving current frame: {e}")
 
     def closeEvent(self, event):
+        """Clean up resources when closing the application."""
+        self._cleanup_resources()
+        event.accept()
+    
+    def _cleanup_resources(self):
+        """Clean up all resources and stop background threads."""
         self.video_loader.cleanup()
         self.image_processor.clear_cache()
         if self.video_capture:
             self.video_capture.release()
-        event.accept()
 
 available_methods = OrderedDict()
 

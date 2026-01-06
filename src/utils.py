@@ -17,7 +17,11 @@ class PaletteCache:
 _palette_cache = PaletteCache()
 
 def open_image(image_filename):
-    return Image.open(image_filename).convert('RGB')
+    try:
+        return Image.open(image_filename).convert('RGB')
+    except Exception as e:
+        print(f"Error opening image {image_filename}: {e}")
+        raise
 
 def pil2numpy(image):
     return np.array(image, dtype=np.float32) / 255.0
@@ -79,29 +83,37 @@ def closest_palette_color(value, palette_name):
             return colors[ci_use]
 
 def pil_to_pixmap(pil_image):
-    if pil_image.mode == '1':
-        pil_image = pil_image.convert('L')
+    try:
+        if pil_image.mode == '1':
+            pil_image = pil_image.convert('L')
 
-    if pil_image.mode == 'L':
-        # Grayscale
-        data = pil_image.tobytes('raw', 'L')
-        q_image = QImage(data, pil_image.width, pil_image.height,
-                         pil_image.width, QImage.Format.Format_Grayscale8)
-    elif pil_image.mode == 'RGB':
-        # RGB
-        data = pil_image.tobytes('raw', 'RGB')
-        q_image = QImage(data, pil_image.width, pil_image.height,
-                         pil_image.width * 3, QImage.Format.Format_RGB888)
-    elif pil_image.mode == 'RGBA':
-        # RGBA
-        data = pil_image.tobytes('raw', 'RGBA')
-        q_image = QImage(data, pil_image.width, pil_image.height,
-                         pil_image.width * 4, QImage.Format.Format_RGBA8888)
-    else:
-        # Fallback
-        pil_image = pil_image.convert('RGB')
-        data = pil_image.tobytes('raw', 'RGB')
-        q_image = QImage(data, pil_image.width, pil_image.height,
-                         pil_image.width * 3, QImage.Format.Format_RGB888)
+        if pil_image.mode == 'L':
+            # Grayscale
+            data = pil_image.tobytes('raw', 'L')
+            q_image = QImage(data, pil_image.width, pil_image.height,
+                             pil_image.width, QImage.Format.Format_Grayscale8)
+        elif pil_image.mode == 'RGB':
+            # RGB
+            data = pil_image.tobytes('raw', 'RGB')
+            q_image = QImage(data, pil_image.width, pil_image.height,
+                             pil_image.width * 3, QImage.Format.Format_RGB888)
+        elif pil_image.mode == 'RGBA':
+            # RGBA
+            data = pil_image.tobytes('raw', 'RGBA')
+            q_image = QImage(data, pil_image.width, pil_image.height,
+                             pil_image.width * 4, QImage.Format.Format_RGBA8888)
+        else:
+            # Fallback
+            pil_image = pil_image.convert('RGB')
+            data = pil_image.tobytes('raw', 'RGB')
+            q_image = QImage(data, pil_image.width, pil_image.height,
+                             pil_image.width * 3, QImage.Format.Format_RGB888)
 
-    return QPixmap.fromImage(q_image)
+        if q_image.isNull():
+            print("Error: Failed to create QImage")
+            return QPixmap()
+            
+        return QPixmap.fromImage(q_image)
+    except Exception as e:
+        print(f"Error converting PIL image to QPixmap: {e}")
+        return QPixmap()

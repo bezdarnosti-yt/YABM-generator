@@ -2,25 +2,25 @@ from collections import OrderedDict
 import numpy as np
 
 _diffusion_matrices_fast = {
-    'floyd_steinberg_SLOW': np.array([
+    'floyd_steinberg': np.array([
         [0, 0, 7, 0, 0],
         [3, 5, 1, 0, 0],
         [0, 0, 0, 0, 0]
     ], dtype=np.float32) / 16.0,
 
-    'atkinson_SLOW': np.array([
+    'atkinson': np.array([
         [0, 0, 1, 1, 0],
         [1, 1, 1, 0, 0],
         [0, 1, 0, 0, 0]
     ], dtype=np.float32) / 8.0,
 
-    'burkes_SLOW': np.array([
+    'burkes': np.array([
         [0, 0, 8, 4, 0],
         [2, 4, 8, 4, 2],
         [0, 0, 0, 0, 0]
     ], dtype=np.float32) / 32.0,
 
-    'sierra_lite_SLOW': np.array([
+    'sierra_lite': np.array([
         [0, 0, 2, 0, 0],
         [1, 1, 0, 0, 0],
         [0, 0, 0, 0, 0]
@@ -78,10 +78,14 @@ def _error_diffusion(image_matrix, palette_name, diffusion_matrix, threshold=0.5
 
     return new_matrix
 
-_method_names_fast = ['floyd_steinberg_SLOW', 'atkinson_SLOW', 'burkes_SLOW', 'sierra_lite_SLOW']
+_method_names_fast = ['floyd_steinberg', 'atkinson', 'burkes', 'sierra_lite']
+
+def _create_method(matrix_name):
+    """Create error diffusion method for given matrix name."""
+    def method(image_matrix, palette_name, threshold=0.5):
+        return _error_diffusion(image_matrix, palette_name, _diffusion_matrices_fast[matrix_name], threshold)
+    return method
 
 available_methods = OrderedDict(
-    [(mn, (lambda name: (lambda im, pal, threshold=0.5:
-        _error_diffusion(im, pal, _diffusion_matrices_fast[name], threshold)))(mn))
-     for mn in _method_names_fast]
+    (name, _create_method(name)) for name in _method_names_fast
 )
