@@ -1,5 +1,6 @@
 import os
 import sys
+import hashlib
 
 # Fix Qt plugin conflict with OpenCV
 os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = ''
@@ -88,11 +89,11 @@ class ImageProcessor:
     def _get_cache_key(image_data, scale_percent, threshold_value, dither_method, palette_method):
         # Creating key for cache from args
         if hasattr(image_data, 'tobytes'):
-            # For PIL Image
-            image_hash = hash(image_data.tobytes())
+            # For PIL Image - use SHA256 for secure hashing
+            image_hash = hashlib.sha256(image_data.tobytes()).hexdigest()[:16]
         else:
             # etc
-            image_hash = hash(str(image_data))
+            image_hash = hashlib.sha256(str(image_data).encode()).hexdigest()[:16]
 
         return image_hash, scale_percent, threshold_value, dither_method, palette_method
 
